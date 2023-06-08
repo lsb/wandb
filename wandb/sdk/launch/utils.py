@@ -459,7 +459,7 @@ def _fetch_git_repo(dst_dir: str, uri: str, version: Optional[str]) -> str:
     print(f"{uri=},{version=},{ref.ref=}")
     assert version is not None or ref.ref is not None or ref.default_branch is not None
     print("F")
-    return version or ref.ref or ref.default_branch  # type: ignore
+    return version or ref.ref or ref.default_branch
 
 
 def merge_parameters(
