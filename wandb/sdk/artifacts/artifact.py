@@ -1,4 +1,5 @@
 """Artifact class."""
+from concurrent.futures import ThreadPoolExecutor
 import contextlib
 import datetime
 import json
@@ -56,7 +57,7 @@ from wandb.sdk.artifacts.storage_policies.wandb_storage_policy import WandbStora
 from wandb.sdk.data_types._dtypes import Type as WBType
 from wandb.sdk.data_types._dtypes import TypeRegistry
 from wandb.sdk.internal.thread_local_settings import _thread_local_api_settings
-from wandb.sdk.lib import filesystem, runid, telemetry
+from wandb.sdk.lib import filesystem, retry, runid, telemetry
 from wandb.sdk.lib.hashutil import B64MD5, b64_to_hex_id, md5_file_b64
 from wandb.sdk.lib.paths import FilePathStr, LogicalPath, StrPath, URIStr
 
@@ -1121,8 +1122,6 @@ class Artifact:
             logical_path, physical_path = log_phy_path
             self._add_local_file(logical_path, physical_path)
 
-        import multiprocessing.dummy  # this uses threads
-
         num_threads = 8
         pool = multiprocessing.dummy.Pool(num_threads)
         pool.map(add_manifest_file, paths)
@@ -1577,8 +1576,37 @@ class Artifact:
             start_time = datetime.datetime.now()
         download_logger = ArtifactDownloadLogger(nfiles=nfiles)
 
-        def _download_file(
-            name: str,
+        @retry.retriable(retry_timedelta=datetime.timedelta(hours=1))
+        def fetch_file_urls(cursor: Optional[str]) -> Dict[str, Any]:
+            query = gql(
+                """
+                query ArtifactFiles($id: ID!, $cursor: String) {
+                    artifact(id: $id) {
+                        files(after: $cursor, first: 5000) {
+                            pageInfo {
+                                hasNextPage
+                                endCursor
+                            }
+                            edges {
+                                node {
+                                    name
+                                    directUrl
+                                }
+                            }
+                        }
+                    }
+                }
+                """
+            )
+            assert self._client is not None
+            response = self._client.execute(
+                query,
+                variable_values={"id": self.id, "cursor": cursor},
+            )
+            return response["artifact"]["files"]
+
+        def _download_entry(
+            entry: ArtifactManifestEntry,
             api_key: Optional[str],
             cookies: Optional[Dict],
             headers: Optional[Dict],
@@ -1587,23 +1615,36 @@ class Artifact:
             _thread_local_api_settings.cookies = cookies
             _thread_local_api_settings.headers = headers
 
-            self.get_path(name).download(root)
+            entry.download(root)
             download_logger.notify_downloaded()
 
-        pool = multiprocessing.dummy.Pool(32)
-        pool.map(
-            partial(
-                _download_file,
-                api_key=_thread_local_api_settings.api_key,
-                cookies=_thread_local_api_settings.cookies,
-                headers=_thread_local_api_settings.headers,
-            ),
-            self.manifest.entries,
+        download_entry = partial(
+            _download_entry,
+            api_key=_thread_local_api_settings.api_key,
+            cookies=_thread_local_api_settings.cookies,
+            headers=_thread_local_api_settings.headers,
         )
+
+        with ThreadPoolExecutor(64) as executor:
+            # Download files.
+            has_next_page = True
+            cursor = None
+            while has_next_page:
+                attrs = fetch_file_urls(cursor)
+                has_next_page = attrs["pageInfo"]["hasNextPage"]
+                cursor = attrs["pageInfo"]["endCursor"]
+                for edge in attrs["edges"]:
+                    entry = self.get_path(edge["node"]["name"])
+                    entry._download_url = edge["node"]["directUrl"]
+                    executor.submit(download_entry, entry)
+            # Download references.
+            for entry in self.manifest.entries.values():
+                if entry.ref is not None:
+                    executor.submit(download_entry, entry)
+
         if recursive:
-            pool.map(lambda artifact: artifact.download(), self._dependent_artifacts)
-        pool.close()
-        pool.join()
+            for dependent_artifact in self._dependent_artifacts:
+                dependent_artifact.download()
 
         if log:
             now = datetime.datetime.now()

@@ -115,16 +115,19 @@ class WandbStoragePolicy(StoragePolicy):
         if hit:
             return path
 
-        auth = None
-        if not _thread_local_api_settings.cookies:
-            auth = ("api", self._api.api_key)
-        response = self._session.get(
-            self._file_url(self._api, artifact.entity, manifest_entry),
-            auth=auth,
-            cookies=_thread_local_api_settings.cookies,
-            headers=_thread_local_api_settings.headers,
-            stream=True,
-        )
+        if manifest_entry._download_url is None:
+            auth = None
+            if not _thread_local_api_settings.cookies:
+                auth = ("api", self._api.api_key)
+            response = self._session.get(
+                self._file_url(self._api, artifact.entity, manifest_entry),
+                auth=auth,
+                cookies=_thread_local_api_settings.cookies,
+                headers=_thread_local_api_settings.headers,
+                stream=True,
+            )
+        else:
+            response = self._session.get(manifest_entry._download_url, stream=True)
         response.raise_for_status()
 
         with cache_open(mode="wb") as file:
