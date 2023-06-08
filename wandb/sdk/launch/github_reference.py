@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 import tempfile
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 PREFIX_HTTPS = "https://"
@@ -212,12 +212,14 @@ class GitHubReference:
             self.directory = self.path
             self.path = None
 
-    def _pull_repo(self, dst_dir: Optional[str] = None) -> str:
-        """Pull the repo to the destination directory, or to a temp directory if not given
-        :returns: the local directory the repo was pulled to"""
+    def _pull_repo(self, dst_dir: Optional[str] = None) -> None:
+        """Pull the repo to the destination directory, or to a temp directory if not given.
+
+        :returns: the local directory the repo was pulled to
+        """
         if dst_dir is None and self.local_dir is not None:
-            return self.local_dir
-        import git  # type: ignore
+            return
+        import git
 
         if dst_dir is None:
             dst_dir = tempfile.TemporaryDirectory().name
@@ -225,22 +227,23 @@ class GitHubReference:
         self.local_dir = dst_dir
 
     def commit(self) -> str:
-        """Get git SHA associated with the reference"""
+        """Get git SHA associated with the reference."""
         self._pull_repo()
-        return self.repo_object.head.commit.hexsha
+        assert self.repo_object is not None
+        return self.repo_object.head.commit.hexsha  # type: ignore
 
     def get_requirements(self) -> str:
-        """Pull requirements.txt from the top-level of the repo"""
+        """Pull requirements.txt from the top-level of the repo."""
         self._pull_repo()
-        with open(f"{self.local_dir}/requirements.txt", "r") as req_file:
+        with open(f"{self.local_dir}/requirements.txt") as req_file:
             reqs = req_file.read()
         return reqs
 
     def get_python_version(self) -> Optional[str]:
-        """Pull python version from the top-level of the repo"""
+        """Pull python version from the top-level of the repo."""
         self._pull_repo()
         try:
-            with open(f"{self.local_dir}/.python-version", "r") as version_file:
+            with open(f"{self.local_dir}/.python-version") as version_file:
                 version = version_file.read()
                 return version
         except FileNotFoundError:
