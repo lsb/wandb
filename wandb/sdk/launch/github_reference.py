@@ -1,10 +1,10 @@
 """Support for parsing GitHub URLs (which might be user provided) into constituent parts."""
 
 import re
+import tempfile
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
-import tempfile
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
