@@ -53,9 +53,6 @@ class GitHubReference:
     # Set when we don't know how to parse yet
     path: Optional[str] = None
 
-    # Set when we do know
-    default_branch: Optional[str] = None
-
     ref: Optional[str] = None  # branch or commit
     ref_type: Optional[ReferenceType] = None
 
@@ -98,7 +95,7 @@ class GitHubReference:
                 url += f"/{self.directory}"
             if self.file:
                 url += f"/{self.file}"
-        elif self.path:
+        if self.path:
             url += f"/{self.path}"
         return url
 
@@ -138,7 +135,10 @@ class GitHubReference:
                         repo = repo[: -len(SUFFIX_GIT)]
                     ref.repo = repo
                     ref.view = parts[3] if len(parts) > 3 else None
-                    ref.path = "/".join(parts[4:])
+                    if len(parts) > 4:
+                        ref.ref = parts[4]
+                        ref.ref_type = ReferenceType.BRANCH
+                    ref.path = "/".join(parts[5:])
         return ref
 
     def fetch(self, dst_dir: str) -> None:
@@ -190,30 +190,6 @@ class GitHubReference:
                     head.checkout()
                     break
 
-        # Must be on default branch. Try to figure out what that is.
-        # TODO: Is there a better way to do this?
-        default_branch = None
-        if not commit and not branch:
-            for ref in repo.references:
-                if hasattr(ref, "tag"):  # Skip tag references
-                    continue
-                refname = ref.name
-                if refname.startswith("origin/"):  # Trim off "origin/"
-                    refname = refname[7:]
-                if refname == "main":
-                    default_branch = "main"
-                    break
-                if refname == "master":
-                    default_branch = "master"
-                    # Keep looking in case we also have a main, which we let take precedence
-                    # (While the references appear to be sorted, not clear if that's guaranteed.)
-            if not default_branch:
-                raise LaunchError(
-                    f"Unable to determine branch or commit to checkout from {self.url()}"
-                )
-            self.default_branch = default_branch
-            head = repo.create_head(default_branch, origin.refs[default_branch])
-            head.checkout()
         repo.submodule_update(init=True, recursive=True)
 
         # Now that we've checked something out, try to extract directory and file from what remains

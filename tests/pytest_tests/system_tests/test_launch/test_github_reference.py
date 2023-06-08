@@ -57,13 +57,18 @@ def test_parse_repo() -> None:
         "https://github.com/wandb/examples/pulls",
         "https://github.com/wandb/examples/tree/master/examples/launch/launch-quickstart",
         "https://github.com/wandb/examples/blob/master/examples/launch/launch-quickstart/README.md",
+        "https://github.com/wandb/examples/blob/other-branch/examples/launch/launch-quickstart/README.md",
     ]
     for case in cases:
+        expected_branch = case.split("/")[6] if len(case.split("/")) > 6 else None
+        expected_path = "/".join(case.split("/")[7:])
         ref = GitHubReference.parse(case)
         assert ref.host == "github.com"
         assert ref.organization == "wandb"
         assert ref.repo == "examples"
         assert ref.url() == case
+        assert ref.ref == expected_branch
+        assert ref.path == expected_path
 
 
 def test_parse_tree() -> None:
@@ -74,7 +79,7 @@ def test_parse_tree() -> None:
     assert ref.organization == "wandb"
     assert ref.repo == "examples"
     assert ref.view == "tree"
-    assert ref.path == "master/examples/launch/launch-quickstart"
+    assert ref.path == "examples/launch/launch-quickstart"
     assert ref.url() == case
 
 
@@ -86,7 +91,7 @@ def test_parse_blob() -> None:
     assert ref.organization == "wandb"
     assert ref.repo == "examples"
     assert ref.view == "blob"
-    assert ref.path == "master/examples/launch/launch-quickstart/README.md"
+    assert ref.path == "examples/launch/launch-quickstart/README.md"
     assert ref.url() == case
 
 
@@ -100,7 +105,7 @@ def test_parse_auth() -> None:
     assert ref.organization == "wandb"
     assert ref.repo == "examples"
     assert ref.view == "blob"
-    assert ref.path == "commit/path/entry.py"
+    assert ref.path == "path/entry.py"
     assert ref.url() == case
 
     case = "https://username:pword@github.com/wandb/examples/blob/commit/path/entry.py"
@@ -111,7 +116,7 @@ def test_parse_auth() -> None:
     assert ref.organization == "wandb"
     assert ref.repo == "examples"
     assert ref.view == "blob"
-    assert ref.path == "commit/path/entry.py"
+    assert ref.path == "path/entry.py"
     assert ref.url() == case
 
 
