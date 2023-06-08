@@ -135,3 +135,10 @@ def test_update_ref() -> None:
     assert ref.ref == "jamie/testing-a-branch"
     expected = "https://github.com/jamie-rasmussen/launch-test-private/blob/jamie/testing-a-branch/haspyenv/today.py"
     assert ref.url() == expected
+
+
+def test_commit() -> None:
+    case = "https://github.com/wandb/examples/tree/master/examples/launch/launch-quickstart"
+    ref = GitHubReference.parse(case)
+    commit = ref.commit()
+    assert len(commit) == 40

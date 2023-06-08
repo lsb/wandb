@@ -4,10 +4,9 @@ import re
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
-from typing import Optional, Tuple
+import tempfile
+from typing import List, Optional, Tuple
 from urllib.parse import urlparse
-
-from wandb.sdk.launch.errors import LaunchError
 
 PREFIX_HTTPS = "https://"
 PREFIX_SSH = "git@"
@@ -58,6 +57,11 @@ class GitHubReference:
 
     directory: Optional[str] = None
     file: Optional[str] = None
+
+    # Location of repo locally if pulled
+    local_dir: Optional[str] = None
+
+    repo_object = None
 
     def update_ref(self, ref: Optional[str]) -> None:
         if ref:
@@ -207,3 +211,37 @@ class GitHubReference:
         elif path.is_dir():
             self.directory = self.path
             self.path = None
+
+    def _pull_repo(self, dst_dir: Optional[str] = None) -> str:
+        """Pull the repo to the destination directory, or to a temp directory if not given
+        :returns: the local directory the repo was pulled to"""
+        if dst_dir is None and self.local_dir is not None:
+            return self.local_dir
+        import git  # type: ignore
+
+        if dst_dir is None:
+            dst_dir = tempfile.TemporaryDirectory().name
+        self.repo_object = git.Repo.clone_from(self.repo_ssh(), dst_dir)
+        self.local_dir = dst_dir
+
+    def commit(self) -> str:
+        """Get git SHA associated with the reference"""
+        self._pull_repo()
+        return self.repo_object.head.commit.hexsha
+
+    def get_requirements(self) -> str:
+        """Pull requirements.txt from the top-level of the repo"""
+        self._pull_repo()
+        with open(f"{self.local_dir}/requirements.txt", "r") as req_file:
+            reqs = req_file.read()
+        return reqs
+
+    def get_python_version(self) -> Optional[str]:
+        """Pull python version from the top-level of the repo"""
+        self._pull_repo()
+        try:
+            with open(f"{self.local_dir}/.python-version", "r") as version_file:
+                version = version_file.read()
+                return version
+        except FileNotFoundError:
+            return None
