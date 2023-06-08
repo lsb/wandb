@@ -443,16 +443,23 @@ def _fetch_git_repo(dst_dir: str, uri: str, version: Optional[str]) -> str:
     """
     # We defer importing git until the last moment, because the import requires that the git
     # executable is available on the PATH, so we only want to fail if we actually need it.
+    print("A")
 
     _logger.info("Fetching git repo")
     ref = GitHubReference.parse(uri)
     if ref is None:
+        print("B")
         raise LaunchError(f"Unable to parse git uri: {uri}")
     if version:
+        print("C")
         ref.update_ref(version)
+    print("D")
     ref.fetch(dst_dir)
-    assert version is not None or ref.ref is not None
-    return version or ref.ref  # type: ignore
+    print("E")
+    print(f"{uri=},{version=},{ref.ref=}")
+    assert version is not None or ref.ref is not None or ref.default_branch is not None
+    print("F")
+    return version or ref.ref or ref.default_branch  # type: ignore
 
 
 def merge_parameters(

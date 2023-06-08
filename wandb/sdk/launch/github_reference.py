@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
+from wandb.sdk.launch.errors import LaunchError
+
 PREFIX_HTTPS = "https://"
 PREFIX_SSH = "git@"
 SUFFIX_GIT = ".git"
@@ -128,6 +130,7 @@ class GitHubReference:
         ref.username, ref.password, ref.host = _parse_netloc(parsed.netloc)
 
         parts = parsed.path.split("/")
+        print(f"{parts=}")
         if len(parts) > 1:
             if parts[1] == "orgs" and len(parts) > 2:
                 ref.organization = parts[2]
@@ -194,6 +197,30 @@ class GitHubReference:
                     head.checkout()
                     break
 
+        # Must be on default branch. Try to figure out what that is.
+        # TODO: Is there a better way to do this?
+        default_branch = None
+        if not commit and not branch:
+            for ref in repo.references:
+                if hasattr(ref, "tag"):  # Skip tag references
+                    continue
+                refname = ref.name
+                if refname.startswith("origin/"):  # Trim off "origin/"
+                    refname = refname[7:]
+                if refname == "main":
+                    default_branch = "main"
+                    break
+                if refname == "master":
+                    default_branch = "master"
+                    # Keep looking in case we also have a main, which we let take precedence
+                    # (While the references appear to be sorted, not clear if that's guaranteed.)
+            if not default_branch:
+                raise LaunchError(
+                    f"Unable to determine branch or commit to checkout from {self.url()}"
+                )
+            self.default_branch = default_branch
+            head = repo.create_head(default_branch, origin.refs[default_branch])
+            head.checkout()
         repo.submodule_update(init=True, recursive=True)
 
         # Now that we've checked something out, try to extract directory and file from what remains
