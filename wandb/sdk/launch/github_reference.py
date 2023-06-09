@@ -260,7 +260,7 @@ class GitHubReference:
     def get_commit(self) -> str:
         """Get git hash associated with the reference."""
         self._clone_repo()
-        if self.repo_object is not None:
+        if self.repo_object is None:
             raise LaunchError(f"Error cloning git repo: {self.repo_ssh()}")
         return self.repo_object.head.commit.hexsha  # type: ignore
 
