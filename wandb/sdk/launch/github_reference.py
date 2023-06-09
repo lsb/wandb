@@ -1,5 +1,6 @@
 """Support for parsing GitHub URLs (which might be user provided) into constituent parts."""
 
+import os
 import re
 import tempfile
 from dataclasses import dataclass
@@ -54,6 +55,9 @@ class GitHubReference:
     # Set when we don't know how to parse yet
     path: Optional[str] = None
 
+    # Set when we do know
+    default_branch: Optional[str] = None
+
     ref: Optional[str] = None  # branch or commit
     ref_type: Optional[ReferenceType] = None
 
@@ -106,7 +110,7 @@ class GitHubReference:
         return url
 
     @staticmethod
-    def parse(uri: str) -> Optional["GitHubReference"]:
+    def parse(uri: str, fetch: bool = False) -> Optional["GitHubReference"]:
         """Attempt to parse a string as a GitHub URL."""
         # Special case: git@github.com:wandb/wandb.git
         ref = GitHubReference()
@@ -130,21 +134,21 @@ class GitHubReference:
         ref.username, ref.password, ref.host = _parse_netloc(parsed.netloc)
 
         parts = parsed.path.split("/")
-        if len(parts) > 1:
-            if parts[1] == "orgs" and len(parts) > 2:
-                ref.organization = parts[2]
-            else:
-                ref.organization = parts[1]
-                if len(parts) > 2:
-                    repo = parts[2]
-                    if repo.endswith(SUFFIX_GIT):
-                        repo = repo[: -len(SUFFIX_GIT)]
-                    ref.repo = repo
-                    ref.view = parts[3] if len(parts) > 3 else None
-                    if len(parts) > 4:
-                        ref.ref = parts[4]
-                        ref.ref_type = ReferenceType.BRANCH
-                    ref.path = "/".join(parts[5:])
+        if len(parts) < 2:
+            return ref
+        if parts[1] == "orgs" and len(parts) > 2:
+            ref.organization = parts[2]
+            return ref
+        ref.organization = parts[1]
+        if len(parts) < 3:
+            return ref
+        repo = parts[2]
+        if repo.endswith(SUFFIX_GIT):
+            repo = repo[: -len(SUFFIX_GIT)]
+        ref.repo = repo
+        ref.view = parts[3] if len(parts) > 3 else None
+        ref.path = "/".join(parts[4:])
+
         return ref
 
     def fetch(self, dst_dir: str) -> None:
@@ -238,12 +242,13 @@ class GitHubReference:
             self.directory = self.path
             self.path = None
 
-    def _pull_repo(self, dst_dir: Optional[str] = None) -> None:
-        """Pull the repo to the destination directory, or to a temp directory if not given.
+    def _clone_repo(self, dst_dir: Optional[str] = None) -> None:
+        """Clone the repo to the destination directory, or to a temp directory if not given.
 
-        :returns: the local directory the repo was pulled to
+        :returns: the local directory the repo was cloned to
         """
         if dst_dir is None and self.local_dir is not None:
+            # Repo already cloned, location is stored in self.local_dir
             return
         import git
 
@@ -252,25 +257,41 @@ class GitHubReference:
         self.repo_object = git.Repo.clone_from(self.repo_ssh(), dst_dir)
         self.local_dir = dst_dir
 
-    def commit(self) -> str:
-        """Get git SHA associated with the reference."""
-        self._pull_repo()
-        assert self.repo_object is not None
+    def get_commit(self) -> str:
+        """Get git hash associated with the reference."""
+        self._clone_repo()
+        if self.repo_object is not None:
+            raise LaunchError(f"Error cloning git repo: {self.repo_ssh()}")
         return self.repo_object.head.commit.hexsha  # type: ignore
 
     def get_requirements(self) -> str:
-        """Pull requirements.txt from the top-level of the repo."""
-        self._pull_repo()
-        with open(f"{self.local_dir}/requirements.txt") as req_file:
-            reqs = req_file.read()
+        """Pull requirements.txt from the root of the repo."""
+        self._clone_repo()
+        req_file = f"{self.local_dir}/requirements.txt"
+        if not os.path.isfile(req_file):
+            raise LaunchError(
+                f"Git repository {self.repo_ssh()} must have requirements.txt at root"
+            )
+        with open(f"{self.local_dir}/requirements.txt") as f:
+            reqs = f.read()
         return reqs
 
     def get_python_version(self) -> Optional[str]:
-        """Pull python version from the top-level of the repo."""
-        self._pull_repo()
+        """Pull python version from the root of the repo."""
+        self._clone_repo()
+
+        def major_minor_micro(version: str) -> Tuple[int, int, int]:
+            m = re.search(r"(\d*)\.*(\d*)\.*(\d*)", version)
+            if not m:
+                return 0, 0, 0
+            major, minor, micro = m.groups()
+
+            return int(major or 0), int(minor or 0), int(micro or 0)
+
         try:
             with open(f"{self.local_dir}/.python-version") as version_file:
-                version = version_file.read()
-                return version
-        except FileNotFoundError:
+                versions = version_file.read().splitlines()
+                latest = max(versions, key=major_minor_micro)
+                return latest
+        except Exception:
             return None
