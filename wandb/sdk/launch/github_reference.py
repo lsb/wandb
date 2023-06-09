@@ -130,7 +130,6 @@ class GitHubReference:
         ref.username, ref.password, ref.host = _parse_netloc(parsed.netloc)
 
         parts = parsed.path.split("/")
-        print(f"{parts=}")
         if len(parts) > 1:
             if parts[1] == "orgs" and len(parts) > 2:
                 ref.organization = parts[2]
