@@ -280,18 +280,9 @@ class GitHubReference:
         """Pull python version from the root of the repo."""
         self._clone_repo()
 
-        def major_minor_micro(version: str) -> Tuple[int, int, int]:
-            m = re.search(r"(\d*)\.*(\d*)\.*(\d*)", version)
-            if not m:
-                return 0, 0, 0
-            major, minor, micro = m.groups()
-
-            return int(major or 0), int(minor or 0), int(micro or 0)
-
         try:
             with open(f"{self.local_dir}/.python-version") as version_file:
-                versions = version_file.read().splitlines()
-                latest = max(versions, key=major_minor_micro)
-                return latest
+                version = version_file.read().splitlines()[0]
+                return version
         except Exception:
             return None

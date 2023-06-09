@@ -60,7 +60,6 @@ def test_parse_repo() -> None:
         "https://github.com/wandb/examples/blob/other-branch/examples/launch/launch-quickstart/README.md",
     ]
     for case in cases:
-        # expected_branch = case.split("/")[6] if len(case.split("/")) > 6 else None
         expected_path = "/".join(case.split("/")[6:])
         ref = GitHubReference.parse(case)
         assert ref.host == "github.com"
