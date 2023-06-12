@@ -243,10 +243,7 @@ class GitHubReference:
             self.path = None
 
     def _clone_repo(self, dst_dir: Optional[str] = None) -> None:
-        """Clone the repo to the destination directory, or to a temp directory if not given.
-
-        :returns: the local directory the repo was cloned to
-        """
+        """Clone the repo to the destination directory, or to a temp directory if not given."""
         if dst_dir is None and self.local_dir is not None:
             # Repo already cloned, location is stored in self.local_dir
             return
@@ -264,25 +261,30 @@ class GitHubReference:
             raise LaunchError(f"Error cloning git repo: {self.repo_ssh()}")
         return self.repo_object.head.commit.hexsha  # type: ignore
 
-    def get_requirements(self) -> str:
-        """Pull requirements.txt from the root of the repo."""
-        self._clone_repo()
-        req_file = f"{self.local_dir}/requirements.txt"
-        if not os.path.isfile(req_file):
-            raise LaunchError(
-                f"Git repository {self.repo_ssh()} must have requirements.txt at root"
-            )
-        with open(f"{self.local_dir}/requirements.txt") as f:
-            reqs = f.read()
-        return reqs
+    def get_file(self, fname: str, path: str = "") -> Optional[str]:
+        """Pull a file from the repo.
 
-    def get_python_version(self) -> Optional[str]:
-        """Pull python version from the root of the repo."""
+        :return: Local path to the file if it exists, None otherwise
+        """
         self._clone_repo()
-
-        try:
-            with open(f"{self.local_dir}/.python-version") as version_file:
-                version = version_file.read().splitlines()[0]
-                return version
-        except Exception:
+        assert (
+            self.local_dir is not None
+        )  # Always true, but stops mypy from complaining
+        file = os.path.join(self.local_dir, path, fname)
+        if not os.path.isfile(file):
             return None
+        return file
+
+    def get_requirements_file(self, path: str = "") -> Optional[str]:
+        """Pull requirements.txt file from the specified path within the repo.
+
+        :param path: where the file is located within the repo, if not at root
+        """
+        return self.get_file("requirements.txt", path)
+
+    def get_python_version_file(self, path: str = "") -> Optional[str]:
+        """Pull python version from the specified path within the repo.
+
+        :param path: where the file is located within the repo, if not at root
+        """
+        return self.get_file(".python-version", path)
