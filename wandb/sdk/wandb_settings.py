@@ -1648,6 +1648,13 @@ class Settings:
                 # chroot jails or docker containers. Return user id in these cases.
                 settings["username"] = str(os.getuid())
 
+        if settings["username"] == "root" and os.path.isdir("/dbfs"):
+            # We are probably in a databricks notebook running as root.
+            # Warn the user that `wandb login` logs in everyone on that cluster.
+            import warnings
+            warning.warn("Logging in as root on what is probably a databricks cluster: " +
+                         "this will log in everyone else who runs as root on this cluster.")
+        
         _executable = (
             self._executable
             or os.environ.get(wandb.env._EXECUTABLE)
